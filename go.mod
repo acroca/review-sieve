@@ -1,0 +1,3 @@
+module github.com/acroca/review-sieve
+
+go 1.27.3

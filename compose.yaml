@@ -1,0 +1,10 @@
+services:
+  review-sieve:
+    image: ghcr.io/acroca/review-sieve:latest
+    env_file: .env
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

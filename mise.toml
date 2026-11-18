@@ -1,0 +1,5 @@
+# Development tools for review-sieve. Run `mise install` to get them.
+# Docker is also needed for `make image`, and is not managed here.
+
+[tools]
+go = "1.27.3" # keep in step with go.mod, Dockerfile and .github/workflows/ci.yml
