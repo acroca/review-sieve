@@ -50,7 +50,11 @@ func run(ctx context.Context, environ []string, apiBase string, stdout, stderr i
 		return 1
 	}
 	logger := slog.New(slog.NewTextHandler(stdout, nil))
+	// The parsed rule lists are logged so that a misspelled owner or
+	// repository, which can only ever fall back to MODE, is visible.
 	logger.Info("review-sieve started", "login", redact(login, cfg), "mode", redact(cfg.Mode, cfg),
+		"mode_done", redact(cfg.RuleTargets("done"), cfg), "mode_read", redact(cfg.RuleTargets("read"), cfg),
+		"mode_log", redact(cfg.RuleTargets("log"), cfg),
 		"poll_interval", redact(cfg.PollInterval.String(), cfg), "owner_tokens", redact(cfg.OwnerNames(), cfg))
 	sieve.New(client, cfg, login, logger).Run(ctx)
 	return 0

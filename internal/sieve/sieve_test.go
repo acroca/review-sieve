@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -289,6 +291,43 @@ func TestPollModesAndDeduplication(t *testing.T) {
 				t.Fatalf("wrong tokens: %v", f.tokens)
 			}
 		})
+	}
+}
+
+func TestPollUsesModeRulePerRepository(t *testing.T) {
+	f := newTestServer(t)
+	for id, repo := range map[string]string{"1": "Acme/Repo", "2": "acme/critical", "3": "other/repo", "4": "unlisted/repo"} {
+		owner, _, _ := strings.Cut(repo, "/")
+		thread := f.threads[0]
+		thread.ID = id
+		thread.Subject.URL = f.server.URL + "/repos/" + repo + "/pulls/1"
+		thread.Repository = github.Repository{FullName: repo, Owner: github.User{Login: owner}}
+		if id == "1" {
+			f.threads[0] = thread
+		} else {
+			f.threads = append(f.threads, thread)
+		}
+	}
+	s, logs := f.newSieve(t, "log")
+	s.cfg.Rules = map[string]string{"acme": "done", "acme/critical": "log", "other/repo": "read"}
+	if _, err := s.Poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// The exception inside a "done" owner and the unlisted repository are
+	// only logged; nothing may be marked for them.
+	sort.Strings(f.marked)
+	if want := []string{"DELETE /notifications/threads/1", "PATCH /notifications/threads/3"}; !reflect.DeepEqual(f.marked, want) {
+		t.Fatalf("marks = %v, want %v", f.marked, want)
+	}
+	for _, want := range []string{
+		"repo=Acme/Repo pr=1 title=\"test PR\" action=done",
+		"repo=acme/critical pr=1 title=\"test PR\" action=logged",
+		"repo=other/repo pr=1 title=\"test PR\" action=read",
+		"repo=unlisted/repo pr=1 title=\"test PR\" action=logged",
+	} {
+		if !strings.Contains(logs.String(), want) {
+			t.Errorf("missing %q in logs: %s", want, logs)
+		}
 	}
 }
 

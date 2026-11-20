@@ -23,7 +23,8 @@ Run `make test` and `make fmt-check` before finishing any change.
 ## Layout
 
 - `main.go` — wiring, signal handling, exit codes
-- `internal/config` — environment parsing and the token-per-owner lookup
+- `internal/config` — environment parsing, the token-per-owner lookup and the
+  mode-per-repository lookup (`ModeFor`)
 - `internal/github` — REST client; the only code that talks HTTP
 - `internal/sieve` — the classification rule (`Candidate`, `TeamOnly`) and the
   poll cycle (`Poll`, `Run`)
@@ -34,7 +35,8 @@ Keep the classification rule a pure function, separate from HTTP and the loop.
 
 - Standard library only. `go.mod` must not gain a `require` block.
 - Configuration is environment variables only: `GITHUB_TOKEN`,
-  `GITHUB_TOKEN_<OWNER>`, `MODE`, `POLL_INTERVAL`. No config files, no flags.
+  `GITHUB_TOKEN_<OWNER>`, `MODE`, `MODE_DONE`, `MODE_READ`, `MODE_LOG`,
+  `POLL_INTERVAL`. No config files, no flags.
 - State is in memory only.
 - Token values must never appear in logs or error messages. Variable names may.
 - The only write calls are `PATCH` and `DELETE` on
@@ -66,6 +68,11 @@ Keep the classification rule a pure function, separate from HTTP and the loop.
   the user as author, assignee or requested reviewer, the reviews request is
   skipped.
 - **Logins are case-insensitive** — compare with `strings.EqualFold`.
+- **Mode rules are checked strictly at startup.** In `MODE_DONE`, `MODE_READ`
+  and `MODE_LOG` a repository entry beats its owner's entry, which beats
+  `MODE`. A malformed entry, a target in two lists, or any other `MODE_`
+  variable is a startup error. Those errors name an entry by its position,
+  never by its value, because a value may be a mispasted token.
 - **Accept what GitHub actually returns.** Logins can contain underscores
   (managed enterprise accounts) and a `[bot]` suffix, and a `user` field can be
   null for deleted accounts. Do not add validation that turns valid data into
@@ -95,5 +102,7 @@ The Go version is pinned in four places that must stay in step: `go.mod`,
 ## Out of scope
 
 Do not add, unless asked: desktop or other notification delivery,
-per-repository allow/deny lists, email handling, thread muting, GitHub
-Enterprise Server support, persistent state, or reading tokens from files.
+wildcards or matching on anything but an owner or repository name in the
+mode rules, skipping a repository entirely, email handling, thread muting,
+GitHub Enterprise Server support, persistent state, or reading tokens from
+files.

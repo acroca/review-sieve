@@ -30,6 +30,31 @@ func TestRunInvalidConfigurationDoesNotRequest(t *testing.T) {
 	}
 }
 
+func TestStartupLogListsModeRules(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/user":
+			fmt.Fprint(w, `{"login":"alice"}`)
+		case "/notifications":
+			fmt.Fprint(w, `[]`)
+			cancel()
+		}
+	}))
+	defer server.Close()
+	var out, errOut bytes.Buffer
+	env := []string{"GITHUB_TOKEN=test-token", "MODE_DONE=Other/Repo,Acme-Corp", "MODE_LOG=acme-corp/critical"}
+	if code := run(ctx, env, server.URL, &out, &errOut); code != 0 {
+		t.Fatalf("exit code = %d, stderr = %s", code, errOut.String())
+	}
+	for _, want := range []string{"mode=log ", "mode_done=acme-corp,other/repo ", `mode_read="" `, "mode_log=acme-corp/critical "} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing %q in startup log: %s", want, out.String())
+		}
+	}
+}
+
 func TestRunAuthenticationFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "rejected", http.StatusUnauthorized)

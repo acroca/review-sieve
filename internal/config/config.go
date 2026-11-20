@@ -3,12 +3,21 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
 )
 
-const ownerTokenPrefix = "GITHUB_TOKEN_"
+const (
+	ownerTokenPrefix = "GITHUB_TOKEN_"
+	modeRulePrefix   = "MODE_"
+)
+
+// ruleModes lists the modes that have a rule variable, in the order the
+// variables are read. A target found in two lists is reported against the
+// later one.
+var ruleModes = []string{"done", "read", "log"}
 
 // Config contains the configuration needed to poll GitHub notifications.
 type Config struct {
@@ -16,6 +25,9 @@ type Config struct {
 	Mode         string
 	PollInterval time.Duration
 	OwnerTokens  map[string]string
+	// Rules maps a lowercase owner or owner/repo to the mode used for it
+	// instead of Mode.
+	Rules map[string]string
 }
 
 // Parse parses configuration from environment entries in KEY=value form.
@@ -27,6 +39,8 @@ func Parse(environ []string) (Config, error) {
 	}
 	var mode, interval string
 	var modeSet, intervalSet bool
+	lists := make(map[string]string)
+	var unsupported []string
 	for _, entry := range environ {
 		key, value, ok := strings.Cut(entry, "=")
 		if !ok {
@@ -39,7 +53,14 @@ func Parse(environ []string) (Config, error) {
 			mode, modeSet = value, true
 		case "POLL_INTERVAL":
 			interval, intervalSet = value, true
+		case "MODE_DONE", "MODE_READ", "MODE_LOG":
+			lists[key] = value
 		default:
+			if strings.HasPrefix(key, modeRulePrefix) {
+				// A misspelled rule variable would otherwise do nothing.
+				unsupported = append(unsupported, key)
+				continue
+			}
 			if suffix, found := strings.CutPrefix(key, ownerTokenPrefix); found && suffix != "" {
 				suffix = ownerSuffix(suffix)
 				if value == "" {
@@ -66,7 +87,92 @@ func Parse(environ []string) (Config, error) {
 		}
 		cfg.PollInterval = parsed
 	}
+	if len(unsupported) > 0 {
+		sort.Strings(unsupported)
+		return Config{}, fmt.Errorf("%s is not a supported variable; use MODE_DONE, MODE_READ or MODE_LOG", unsupported[0])
+	}
+	rules, err := parseRules(lists)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Rules = rules
 	return cfg, nil
+}
+
+// parseRules reads the comma-separated MODE_<MODE> lists. Errors name an
+// entry by its position, never by its value.
+func parseRules(lists map[string]string) (map[string]string, error) {
+	rules := make(map[string]string)
+	for _, mode := range ruleModes {
+		variable := ruleVariable(mode)
+		for i, entry := range strings.Split(lists[variable], ",") {
+			target := strings.ToLower(strings.TrimSpace(entry))
+			if target == "" {
+				continue
+			}
+			if !validTarget(target) {
+				return nil, fmt.Errorf("%s entry %d must be an owner or owner/repo", variable, i+1)
+			}
+			if other, listed := rules[target]; listed && other != mode {
+				return nil, fmt.Errorf("%s entry %d is also listed in %s", variable, i+1, ruleVariable(other))
+			}
+			rules[target] = mode
+		}
+	}
+	return rules, nil
+}
+
+func ruleVariable(mode string) string {
+	return modeRulePrefix + strings.ToUpper(mode)
+}
+
+// validTarget reports whether target is an owner or an owner/repo. Anything
+// GitHub never uses in a name is rejected, so a wildcard or a quote kept by
+// an env file fails at startup instead of silently never matching.
+func validTarget(target string) bool {
+	owner, repo, isRepo := strings.Cut(target, "/")
+	return validName(owner) && (!isRepo || validName(repo))
+}
+
+func validName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, c := range name {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '.', c == '_', c == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// ModeFor returns the mode for a repository given as owner/repo: its own
+// rule, else its owner's rule, else Mode.
+func (c Config) ModeFor(repo string) string {
+	repo = strings.ToLower(repo)
+	if mode, ok := c.Rules[repo]; ok {
+		return mode
+	}
+	owner, _, _ := strings.Cut(repo, "/")
+	if mode, ok := c.Rules[owner]; ok {
+		return mode
+	}
+	return c.Mode
+}
+
+// RuleTargets returns the owners and repositories with a rule for mode, in
+// sorted lowercase form.
+func (c Config) RuleTargets(mode string) string {
+	var targets []string
+	for target, ruleMode := range c.Rules {
+		if ruleMode == mode {
+			targets = append(targets, target)
+		}
+	}
+	sort.Strings(targets)
+	return strings.Join(targets, ",")
 }
 
 func ownerSuffix(owner string) string {

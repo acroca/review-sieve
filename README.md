@@ -31,6 +31,33 @@ notifications.
 | `read` | Mark the thread as read |
 | `done` | Mark the thread as done |
 
+### Different modes for some owners or repositories
+
+`MODE` applies to every repository. To use another mode for particular owners
+or repositories, list them in `MODE_DONE`, `MODE_READ` or `MODE_LOG`:
+
+```sh
+MODE=log
+MODE_DONE=acme-corp,other-org/noisy-repo
+MODE_READ=some-org
+MODE_LOG=acme-corp/critical-service
+```
+
+Each list is comma-separated and each entry is an owner (`acme-corp`) or a
+repository (`acme-corp/critical-service`). A repository entry takes precedence
+over its owner's entry, and both take precedence over `MODE`. Matching is
+case-insensitive. Wildcards are not supported, and entries must not be quoted.
+
+review-sieve refuses to start when an entry is not an owner or `owner/repo`,
+when the same owner or repository is in two lists, or when any other variable
+starting with `MODE_` is set. The error names the variable and the position of
+the entry in its list.
+
+A misspelled name cannot be detected: it matches nothing, and the repositories
+you meant fall back to `MODE`. Keep `MODE=log` and opt owners and repositories
+in to `read` or `done`, so that a typo leaves notifications alone. The startup
+log line shows the parsed lists as `mode_done`, `mode_read` and `mode_log`.
+
 ## Tokens
 
 Create a **classic personal access token** with only the `notifications`
@@ -78,6 +105,9 @@ Configuration is through environment variables only.
 | `GITHUB_TOKEN` | Required | Classic token for authentication, notifications, and fallback pull request lookups |
 | `GITHUB_TOKEN_<OWNER>` | None | Optional per-owner token for pull request and review lookups |
 | `MODE` | `log` | `log`, `read`, or `done` (case-insensitive) |
+| `MODE_DONE` | None | Owners and repositories to mark as done, whatever `MODE` is |
+| `MODE_READ` | None | Owners and repositories to mark as read, whatever `MODE` is |
+| `MODE_LOG` | None | Owners and repositories to only log, whatever `MODE` is |
 | `POLL_INTERVAL` | `60s` | Positive Go duration between polls |
 
 The actual wait is the larger of `POLL_INTERVAL` and GitHub's

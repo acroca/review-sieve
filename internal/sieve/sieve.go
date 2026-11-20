@@ -208,10 +208,12 @@ func (s *Sieve) lookup(ctx context.Context, thread github.Thread) result {
 	return r
 }
 
-// dismiss acts on a team-only thread according to the mode and returns the
-// action taken. Marks are spaced at least markPace apart.
+// dismiss acts on a team-only thread according to the mode configured for
+// its repository and returns the action taken. Marks are spaced at least
+// markPace apart.
 func (s *Sieve) dismiss(ctx context.Context, thread github.Thread, lastMark *time.Time) (string, error) {
-	switch s.cfg.Mode {
+	mode := s.cfg.ModeFor(thread.Repository.FullName)
+	switch mode {
 	case "log":
 		return "logged", nil
 	case "read", "done":
@@ -235,10 +237,10 @@ func (s *Sieve) dismiss(ctx context.Context, thread github.Thread, lastMark *tim
 		return "", errors.New("notification changed since listing")
 	}
 	*lastMark = time.Now()
-	if err := s.client.Mark(ctx, thread.ID, s.cfg.Mode); err != nil {
+	if err := s.client.Mark(ctx, thread.ID, mode); err != nil {
 		return "", err
 	}
-	return s.cfg.Mode, nil
+	return mode, nil
 }
 
 // apply records the outcome of a lookup. It runs on Poll's goroutine, one
